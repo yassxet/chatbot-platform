@@ -1,0 +1,55 @@
+{
+  "name": "BotForge — Document Ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "botforge-ingest",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BOTFORGE_URL }}/api/ingest",
+        "sendBody": true,
+        "bodyContentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "botId", "value": "={{ $json.botId }}" },
+            { "name": "file", "value": "={{ $binary.data }}", "parameterType": "formBinaryData" }
+          ]
+        }
+      },
+      "name": "POST to BotForge Ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, result: $json } }}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "POST to BotForge Ingest", "type": "main", "index": 0 }]]
+    },
+    "POST to BotForge Ingest": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_description": "Receives a file via webhook (from Google Drive, email, etc.) and forwards it to the BotForge /api/ingest endpoint. Set BOTFORGE_URL in n8n environment variables."
+}
