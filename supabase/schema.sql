@@ -1,5 +1,70 @@
 -- Run this in your Supabase SQL editor
+-- ============================================================
+-- STEP 1: Enable pgvector extension (do this first)
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS vector;
 
+-- ============================================================
+-- STEP 2: Document embeddings table (replaces Chroma DB)
+-- Each row = one text chunk + its 1536-dim OpenAI embedding
+-- ============================================================
+CREATE TABLE IF NOT EXISTS document_embeddings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_id UUID NOT NULL,
+  content TEXT NOT NULL,
+  embedding vector(1536) NOT NULL,
+  filename TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL DEFAULT 0,
+  page INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for fast vector similarity search (cosine distance)
+CREATE INDEX IF NOT EXISTS idx_doc_embeddings_vector
+  ON document_embeddings
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+
+-- Index for filtering by bot
+CREATE INDEX IF NOT EXISTS idx_doc_embeddings_bot_id
+  ON document_embeddings(bot_id);
+
+-- ============================================================
+-- STEP 3: Similarity search function
+-- Returns the top-K most relevant chunks for a given bot
+-- ============================================================
+CREATE OR REPLACE FUNCTION match_documents(
+  query_embedding vector(1536),
+  match_bot_id UUID,
+  match_count INT DEFAULT 5
+)
+RETURNS TABLE (
+  id UUID,
+  content TEXT,
+  filename TEXT,
+  chunk_index INTEGER,
+  page INTEGER,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    de.id,
+    de.content,
+    de.filename,
+    de.chunk_index,
+    de.page,
+    1 - (de.embedding <=> query_embedding) AS similarity
+  FROM document_embeddings de
+  WHERE de.bot_id = match_bot_id
+  ORDER BY de.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+-- ============================================================
 -- Chatbot configurations
 CREATE TABLE IF NOT EXISTS bots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
